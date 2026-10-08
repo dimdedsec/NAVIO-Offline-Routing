@@ -1,0 +1,72 @@
+name: NAVIO | Build dan Publikasikan Offline Routing Jambi
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: navio-jambi-graph-publisher
+  cancel-in-progress: false
+
+jobs:
+  publish-jambi:
+    name: Valhalla Jambi (pilot)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Install Osmium
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y osmium-tool
+          osmium --version
+
+      - name: Build OSM graph Valhalla + uji arsip
+        env:
+          NAVIO_WORK: ${{ runner.temp }}/navio-graph
+        run: bash tools/github_build_jambi.sh "$NAVIO_WORK"
+
+      - name: Uji routing Valhalla sungguhan pada localhost runner
+        env:
+          NAVIO_WORK: ${{ runner.temp }}/navio-graph
+        run: bash tools/github_smoke_route.sh "$NAVIO_WORK"
+
+      - name: Publish graph to GitHub Release (immutable tag)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NAVIO_WORK: ${{ runner.temp }}/navio-graph
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TAG="routing-jambi-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "NAVIO_GRAPH_TAG=$TAG" >> "$GITHUB_ENV"
+          gh release create "$TAG" "$NAVIO_WORK/jambi-tiles.tar" \
+            --repo "$GH_REPO" --target "$GITHUB_SHA" \
+            --title "NAVIO Routing Jambi | $TAG" \
+            --notes "Pilot Jambi dengan batas area dan penyangga. Bukan peta routing seluruh Sumatra. Dibangun otomatis dari © OpenStreetMap contributors, data Geofabrik. Lakukan pengujian NAVIO Android sebelum penggunaan harian."
+
+      - name: Publish katalog NAVIO setelah rilis graph berhasil
+        env:
+          NAVIO_WORK: ${{ runner.temp }}/navio-graph
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          URL="https://github.com/${GH_REPO}/releases/download/${NAVIO_GRAPH_TAG}/jambi-tiles.tar"
+          python3 tools/publish_valhalla_catalog.py \
+            --id jambi \
+            --label 'Jambi dan koridor sekitar (PILOT; cakupan terbatas)' \
+            --tar "$NAVIO_WORK/jambi-tiles.tar" \
+            --url "$URL" \
+            --output navio-routing-catalog.json
+          python3 tools/check_navio_publisher.py --catalog navio-routing-catalog.json --region jambi --tar "$NAVIO_WORK/jambi-tiles.tar"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add navio-routing-catalog.json
+          git commit -m "chore(routing): publish verified Jambi Valhalla graph ${NAVIO_GRAPH_TAG}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
