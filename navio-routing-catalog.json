@@ -1,4 +1,12 @@
 {
   "schema": 1,
-  "packages": []
+  "packages": [
+    {
+      "id": "jambi",
+      "label": "Jambi dan koridor sekitar (PILOT; cakupan terbatas)",
+      "url": "https://github.com/dimdedsec/NAVIO-Offline-Routing/releases/download/routing-jambi-37732388154-1/jambi-tiles.tar",
+      "bytes": 89681920,
+      "sha256": "1b8a97b29eaf99977d8839989d98b292347e4dc1255231907f1821f56b6f65c4"
+    }
+  ]
 }
